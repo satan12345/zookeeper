@@ -246,11 +246,13 @@ public class Leader {
                 if (self.getQuorumListenOnAllIPs()) {
                     ss = new ServerSocket(self.getQuorumAddress().getPort());
                 } else {
+                    //创建ServerSocket
                     ss = new ServerSocket();
                 }
             }
             ss.setReuseAddress(true);
             if (!self.getQuorumListenOnAllIPs()) {
+                //绑定内部通信端口
                 ss.bind(self.getQuorumAddress());
             }
         } catch (BindException e) {
@@ -391,6 +393,7 @@ public class Leader {
                     Socket s = null;
                     boolean error = false;
                     try {
+                        //内部通信的ServerSocket监听
                         s = ss.accept();
 
                         // start with the initLimit, once the ack is processed
@@ -470,12 +473,14 @@ public class Leader {
 
         try {
             self.tick.set(0);
+            //加载数据
             zk.loadData();
 
             leaderStateSummary = new StateSummary(self.getCurrentEpoch(), zk.getLastProcessedZxid());
 
             // Start thread that waits for connection requests from
             // new followers.
+            //开启线程用于连接followers 同步数据
             cnxAcceptor = new LearnerCnxAcceptor();
             cnxAcceptor.start();
 
@@ -654,7 +659,9 @@ public class Leader {
                     }
                     tickSkip = !tickSkip;
                 }
+
                 for (LearnerHandler f : getLearners()) {
+                    //对所有的其他从节点发起ping命令
                     f.ping();
                 }
             }

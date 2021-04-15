@@ -131,8 +131,11 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
     private ZKDatabase zkDb;
 
     public static final class AddressTuple {
+        //内部节点通信
         public final InetSocketAddress quorumAddr;
+        //选举
         public final InetSocketAddress electionAddr;
+        //客户端连接
         public final InetSocketAddress clientAddr;
 
         public AddressTuple(InetSocketAddress quorumAddr, InetSocketAddress electionAddr, InetSocketAddress clientAddr) {
@@ -393,9 +396,15 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
         }
     }
 
-
+    /**
+     * 节点的状态
+     */
     public enum ServerState {
-        LOOKING, FOLLOWING, LEADING, OBSERVING;
+
+        LOOKING,
+        FOLLOWING,
+        LEADING,
+        OBSERVING;
     }
 
     /*
@@ -808,7 +817,7 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
     private FileTxnSnapLog logFactory = null;
 
     private final QuorumStats quorumStats;
-
+    //控制台服务器
     AdminServer adminServer;
 
     public static QuorumPeer testingQuorumPeer() throws SaslException {
@@ -819,6 +828,7 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
         super("QuorumPeer");
         quorumStats = new QuorumStats(this);
         jmxRemotePeerBean = new HashMap<Long, RemotePeerBean>();
+        //创建一个内部的jettyServer s
         adminServer = AdminServerFactory.createAdminServer();
         x509Util = new QuorumX509Util();
         initialize();
@@ -884,15 +894,23 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
         if (!getView().containsKey(myid)) {
             throw new RuntimeException("My id " + myid + " not in the peer list");
          }
+        //加载数据
         loadDataBase();
+        //启动
         startServerCnxnFactory();
+
         try {
             adminServer.start();
         } catch (AdminServerException e) {
             LOG.warn("Problem starting AdminServer", e);
             System.out.println(e);
         }
+        /**
+         * 开启leader选举
+         * @TODO import
+         */
         startLeaderElection();
+        //调用run方法
         super.start();
     }
 
@@ -947,6 +965,7 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
     }
     synchronized public void startLeaderElection() {
        try {
+           //判断节点额状态是否为Looking 初始状态为LOOKING
            if (getPeerState() == ServerState.LOOKING) {
                currentVote = new Vote(myid, getLastLoggedZxid(), getCurrentEpoch());
            }
@@ -968,6 +987,7 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
                 throw new RuntimeException(e);
             }
         }
+        //创建选举算法
         this.electionAlg = createElectionAlgorithm(electionType);
     }
 
@@ -1085,7 +1105,12 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
             }
             QuorumCnxManager.Listener listener = qcm.listener;
             if(listener != null){
+                //启动线程 创建ServerScoket  监听选票的端口
                 listener.start();
+                /**
+                 * 创建对象
+                 * 会初始sendqueue recvqueue messenger
+                 */
                 FastLeaderElection fle = new FastLeaderElection(this, qcm);
                 fle.start();
                 le = fle;
@@ -1170,6 +1195,7 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
              * Main loop
              */
             while (running) {
+                //判断当前服务器状态
                 switch (getPeerState()) {
                 case LOOKING:
                     LOG.info("LOOKING");
@@ -1226,6 +1252,7 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
                                shuttingDownLE = false;
                                startLeaderElection();
                                }
+                            //选举完成后 设置当前投票
                             setCurrentVote(makeLEStrategy().lookForLeader());
                         } catch (Exception e) {
                             LOG.warn("Unexpected exception", e);
@@ -1249,13 +1276,19 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
                 case FOLLOWING:
                     try {
                        LOG.info("FOLLOWING");
+                       //
                         setFollower(makeFollower(logFactory));
                         follower.followLeader();
                     } catch (Exception e) {
                        LOG.warn("Unexpected exception",e);
                     } finally {
+                        /**
+                         *
+                         * 在执行同步主节点数据的时候 当主节点挂掉 修改服务器状态 进入重新选举状态
+                         */
                        follower.shutdown();
                        setFollower(null);
+                        //更新服务器状态
                        updateServerState();
                     }
                     break;
@@ -1296,6 +1329,7 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
 
     private synchronized void updateServerState(){
        if (!reconfigFlag) {
+           //设置状态
            setPeerState(ServerState.LOOKING);
            LOG.warn("PeerState set to LOOKING");
            return;
